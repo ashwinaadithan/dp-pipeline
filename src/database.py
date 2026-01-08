@@ -13,9 +13,19 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Database URL from environment
+# Database URL from environment or Streamlit secrets
 DATABASE_URL = os.getenv("NEON_DATABASE_URL", "")
-SAVE_TO_DB = os.getenv("SAVE_TO_DATABASE", "false").lower() == "true"
+
+# Verify if running in Streamlit and try to get secret
+if not DATABASE_URL:
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and "NEON_DATABASE_URL" in st.secrets:
+            DATABASE_URL = st.secrets["NEON_DATABASE_URL"]
+    except:
+        pass
+
+SAVE_TO_DB = os.getenv("SAVE_TO_DATABASE", "true").lower() == "true"
 
 
 def get_connection():
