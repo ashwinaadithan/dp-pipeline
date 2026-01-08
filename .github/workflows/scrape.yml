@@ -1,0 +1,68 @@
+# GitHub Actions Workflow: Hourly Scraping
+# Runs scraper every hour, saves to Neon DB, triggers dashboard update
+# FREE: 2000 minutes/month on GitHub
+
+name: Hourly Bus Scraping
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+  
+  # Scheduled: Every hour
+  schedule:
+    - cron: '0 * * * *'  # At minute 0 of every hour
+
+env:
+  NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+  SAVE_TO_DATABASE: 'true'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45  # Prevent runaway jobs
+    
+    steps:
+      # 1. Checkout code
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      
+      # 2. Setup Python
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      # 3. Install dependencies
+      - name: 📦 Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+      
+      # 4. Run scraper (single run mode)
+      - name: 🚌 Run scraper
+        run: |
+          cd src
+          python scraper.py --single-run
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          SAVE_TO_DATABASE: 'true'
+      
+      # 5. Upload artifacts (optional backup)
+      - name: 📤 Upload data artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraped-data-${{ github.run_number }}
+          path: data/
+          retention-days: 7
+      
+      # 6. Commit data to repo (optional)
+      - name: 💾 Commit data to repository
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/
+          git diff --quiet && git diff --staged --quiet || git commit -m "🚌 Automated scrape: $(date +'%Y-%m-%d %H:%M')"
+          git push
+        continue-on-error: true  # Don't fail if nothing to commit

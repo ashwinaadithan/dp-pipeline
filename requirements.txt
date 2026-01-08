@@ -1,0 +1,13 @@
+# Core dependencies
+playwright==1.40.0
+pandas==2.1.0
+openpyxl==3.1.2
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+
+# Visualization
+plotly==5.18.0
+streamlit==1.29.0
+
+# Data processing
+numpy==1.26.0
