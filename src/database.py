@@ -25,9 +25,12 @@ def get_connection():
         return None
     
     try:
-        import psycopg2
-        conn = psycopg2.connect(DATABASE_URL)
+        import psycopg
+        conn = psycopg.connect(DATABASE_URL)
         return conn
+    except ImportError:
+        print("⚠️ psycopg not installed. Database features disabled.")
+        return None
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
         return None

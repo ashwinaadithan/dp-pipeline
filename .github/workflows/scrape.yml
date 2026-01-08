@@ -1,5 +1,5 @@
 # GitHub Actions Workflow: Hourly Scraping
-# Runs scraper every hour, saves to Neon DB, triggers dashboard update
+# Runs scraper every hour, saves to Neon DB
 # FREE: 2000 minutes/month on GitHub
 
 name: Hourly Bus Scraping
@@ -33,36 +33,43 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       
-      # 3. Install dependencies
+      # 3. Install system dependencies for Playwright
+      - name: 🔧 Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2t64 libatk1.0-0 libcups2 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 libxcomposite1 libxdamage1 libxrandr2 xvfb
+      
+      # 4. Install Python dependencies
       - name: 📦 Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-          playwright install chromium --with-deps
+          pip install playwright pandas openpyxl psycopg[binary] python-dotenv
+          playwright install chromium
       
-      # 4. Run scraper (single run mode)
+      # 5. Run scraper (single run mode with virtual display)
       - name: 🚌 Run scraper
         run: |
           cd src
-          python scraper.py --single-run
+          xvfb-run --auto-servernum python scraper.py --single-run
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           SAVE_TO_DATABASE: 'true'
       
-      # 5. Upload artifacts (optional backup)
+      # 6. Upload artifacts (backup)
       - name: 📤 Upload data artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: scraped-data-${{ github.run_number }}
-          path: data/
+          path: src/scraped_data/
           retention-days: 7
       
-      # 6. Commit data to repo (optional)
+      # 7. Commit data to repo (optional)
       - name: 💾 Commit data to repository
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add data/
+          git add src/scraped_data/ || true
           git diff --quiet && git diff --staged --quiet || git commit -m "🚌 Automated scrape: $(date +'%Y-%m-%d %H:%M')"
-          git push
-        continue-on-error: true  # Don't fail if nothing to commit
+          git push || true
+        continue-on-error: true
