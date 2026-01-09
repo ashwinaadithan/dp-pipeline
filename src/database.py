@@ -160,7 +160,8 @@ def save_scrape_run(run_data):
                 bus.get("bus_type"),
                 route.get("from_city"),
                 route.get("to_city"),
-                route.get("travel_date"),
+                # Parse date if needed (handle DD-MMM-YYYY from scraper)
+                _parse_date(route.get("travel_date")),
                 bus.get("departure_time"),
                 bus.get("arrival_time"),
                 bus.get("base_price"),
@@ -276,6 +277,24 @@ def get_price_trends(route_from=None, route_to=None, days=7):
     except Exception as e:
         print(f"❌ Price trends fetch failed: {e}")
         return []
+
+
+def _parse_date(date_str):
+    """Parse date string to YYYY-MM-DD format."""
+    if not date_str:
+        return None
+    
+    try:
+        # Try DD-MMM-YYYY (e.g., 10-Jan-2026)
+        date_obj = datetime.strptime(date_str, "%d-%b-%Y")
+        return date_obj.strftime("%Y-%m-%d")
+    except ValueError:
+        try:
+            # Try YYYY-MM-DD (already correct)
+            datetime.strptime(date_str, "%Y-%m-%d")
+            return date_str
+        except ValueError:
+            return None
 
 
 # Initialize on import
