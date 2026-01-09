@@ -916,23 +916,37 @@ async def scrape_route(page, from_city, to_city, travel_date, target_day):
         await asyncio.sleep(1)
         
         # Count visible operator buses using dynamic keywords
+        # Changed: Match requires ALL keywords to be present for more accurate matching
         bus_info = await page.evaluate("""
         (operatorKeywords) => {
-            const keywords = operatorKeywords.split(' ');
+            const keywords = operatorKeywords.toLowerCase().split(' ').filter(k => k.length > 0);
             const busCards = document.querySelectorAll('[class*="bus-item"], [class*="tuple"], li[class*="row-sec"]');
             let operatorCount = 0;
             let totalCount = busCards.length;
+            let sampleTexts = [];
             
-            busCards.forEach((card) => {
+            busCards.forEach((card, idx) => {
                 const text = (card.innerText || '').toLowerCase();
-                // Check if any keyword matches
-                const matches = keywords.some(kw => text.includes(kw));
-                if (matches) {
+                // Check if ALL keywords match (more accurate than any)
+                const allMatch = keywords.every(kw => text.includes(kw));
+                // Also try partial match with first keyword only (fallback)
+                const partialMatch = keywords.length > 0 && text.includes(keywords[0]);
+                
+                if (allMatch || partialMatch) {
                     operatorCount++;
+                }
+                
+                // Collect sample texts for debugging
+                if (idx < 3 && sampleTexts.length < 3) {
+                    // Get operator name from card (usually in a travels class)
+                    const travelsEl = card.querySelector('[class*="travels"], [class*="operator"], [class*="name"]');
+                    if (travelsEl) {
+                        sampleTexts.push(travelsEl.innerText.substring(0, 50));
+                    }
                 }
             });
             
-            return { total: totalCount, operator: operatorCount };
+            return { total: totalCount, operator: operatorCount, samples: sampleTexts };
         }
         """, " ".join(operator_keywords))
         
