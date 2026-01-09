@@ -988,10 +988,10 @@ async def scrape_route(page, from_city, to_city, travel_date, target_day):
                     except Exception as e:
                         print(f" (click1 failed: {str(e)[:15]})", end="")
                 
-                # Fallback: try clicking the Nth button matching current vignesh count
-                if not clicked and vignesh_scraped <= btn_count:
+                # Fallback: try clicking the Nth button matching current operator count
+                if not clicked and operator_scraped <= btn_count:
                     try:
-                        btn = view_seats_btns.nth(vignesh_scraped - 1)
+                        btn = view_seats_btns.nth(operator_scraped - 1)
                         await btn.scroll_into_view_if_needed()
                         await asyncio.sleep(0.5)
                         await btn.click(force=True, timeout=5000)
