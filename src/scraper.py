@@ -40,15 +40,11 @@ SCRAPE_INTERVAL_HOURS = 1
 TOTAL_DURATION_DAYS = 7
 
 # ========================= SCRAPING SETTINGS =========================
-# How many future days to scrape in each run (keep low to avoid rate limiting)
-DAYS_AHEAD = 3
-
-# Maximum routes to scrape per run (prioritized by bus count - most buses first)
-# Set to 0 or None to scrape all routes
-MAX_PRIORITY_ROUTES = 8
+# How many future days to scrape in each run
+DAYS_AHEAD = 7
 
 # Delay between page loads to avoid rate limiting (seconds)
-PAGE_DELAY = 5
+PAGE_DELAY = 3
 
 # ========================= OUTPUT SETTINGS =========================
 # Output folder for all scraped data (will be created if doesn't exist)
@@ -1162,14 +1158,6 @@ async def run_scraper():
             
             # Store expected routes in session
             session["expected_routes"] = dict(_expected_buses_per_route)
-            
-            # Sort routes by bus count (highest first) and limit to priority routes
-            discovered_routes = sorted(discovered_routes, key=lambda x: x[2], reverse=True)
-            
-            if MAX_PRIORITY_ROUTES and MAX_PRIORITY_ROUTES > 0:
-                original_count = len(discovered_routes)
-                discovered_routes = discovered_routes[:MAX_PRIORITY_ROUTES]
-                print(f"\n📊 Priority Mode: Scraping top {len(discovered_routes)} routes (of {original_count}) by bus count")
             
             # Step 2: Scrape each discovered route
             for from_city, to_city, expected_count in discovered_routes:
