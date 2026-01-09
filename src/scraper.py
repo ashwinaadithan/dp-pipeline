@@ -40,8 +40,11 @@ SCRAPE_INTERVAL_HOURS = 1
 TOTAL_DURATION_DAYS = 7
 
 # ========================= SCRAPING SETTINGS =========================
-# How many future days to scrape in each run
-DAYS_AHEAD = 7
+# How many future days to scrape in each run (keep low to avoid rate limiting)
+DAYS_AHEAD = 3
+
+# Delay between page loads to avoid rate limiting (seconds)
+PAGE_DELAY = 5
 
 # ========================= OUTPUT SETTINGS =========================
 # Output folder for all scraped data (will be created if doesn't exist)
@@ -671,10 +674,18 @@ async def scrape_route(page, from_city, to_city, travel_date, target_day):
     buses = []
     
     try:
-        # 1. Navigate to operator page
+        # 1. Navigate to operator page with retry
         print(f"    🌐 Loading page...", end="", flush=True)
-        await page.goto(OPERATOR_URL, timeout=30000)
-        await asyncio.sleep(3)
+        for retry in range(3):
+            try:
+                await page.goto(OPERATOR_URL, timeout=60000, wait_until='domcontentloaded')
+                break
+            except Exception as e:
+                if retry < 2:
+                    await asyncio.sleep(10)
+                else:
+                    raise e
+        await asyncio.sleep(PAGE_DELAY)
         
         try:
             await page.keyboard.press("Escape")
