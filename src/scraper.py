@@ -1188,6 +1188,18 @@ async def run_scraper():
                     with open(json_file, 'w', encoding='utf-8') as f:
                         json.dump(all_data, f, indent=2, ensure_ascii=False)
                     print(f"  📁 Saved: {json_file}")
+                    
+                    # Save to Database Incrementally (SAFETY AGAINST TIMEOUTS)
+                    if DB_ENABLED and route_buses:
+                        try:
+                            # Create a mini-session with just the new buses to save
+                            mini_session = session.copy()
+                            mini_session["buses"] = route_buses
+                            from database import save_scrape_run
+                            save_scrape_run({"scrape_sessions": [mini_session]})
+                            print("  🗄️  Saved batch to DB")
+                        except Exception as e:
+                            print(f"  ⚠️ DB Save Warning: {e}")
             
             # Step 3: Verification - Compare scraped vs expected
             verification_report = verify_scraped_data(scraped_buses_per_route)
