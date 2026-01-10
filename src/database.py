@@ -30,16 +30,27 @@ SAVE_TO_DB = os.getenv("SAVE_TO_DATABASE", "true").lower() == "true"
 
 def get_connection():
     """Get database connection."""
-    if not DATABASE_URL:
-        print("⚠️ NEON_DATABASE_URL not set. Database saving disabled.")
+    # Try to fetch URL just-in-time (handles Streamlit loading order)
+    db_url = os.getenv("NEON_DATABASE_URL")
+    if not db_url:
+        try:
+            import streamlit as st
+            if "NEON_DATABASE_URL" in st.secrets:
+                db_url = st.secrets["NEON_DATABASE_URL"]
+        except:
+            pass
+
+    if not db_url:
+        print("⚠️ NEON_DATABASE_URL not found in env or secrets.")
         return None
     
     try:
         import psycopg
-        conn = psycopg.connect(DATABASE_URL)
+        # Parse the connection string to ensure it's valid
+        conn = psycopg.connect(db_url)
         return conn
     except ImportError:
-        print("⚠️ psycopg not installed. Database features disabled.")
+        print("⚠️ psycopg not installed. Check requirements.txt.")
         return None
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
