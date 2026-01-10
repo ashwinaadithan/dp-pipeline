@@ -370,6 +370,51 @@ def get_route_timeseries(from_city=None, to_city=None, limit=500):
         return []
 
 
+def get_seat_level_data(bus_id=None, limit=2000):
+    """Get detailed seat-level pricing data for ML analysis."""
+    conn = get_connection()
+    if not conn:
+        return []
+    
+    try:
+        cur = conn.cursor()
+        
+        query = """
+        SELECT 
+            sp.seat_id,
+            sp.price,
+            sp.deck,
+            sp.is_window,
+            b.travel_date,
+            b.bus_type,
+            b.operator
+        FROM seat_prices sp
+        JOIN buses b ON sp.bus_id = b.bus_id
+        WHERE 1=1
+        """
+        params = []
+        
+        if bus_id:
+            query += " AND b.bus_id = %s"
+            params.append(bus_id)
+            
+        query += " ORDER BY b.travel_date ASC, sp.price DESC LIMIT %s"
+        params.append(limit)
+        
+        cur.execute(query, params)
+        columns = [desc[0] for desc in cur.description]
+        data = [dict(zip(columns, row)) for row in cur.fetchall()]
+        
+        cur.close()
+        conn.close()
+        return data
+        
+    except Exception as e:
+        print(f"❌ Seat level fetch failed: {e}")
+        return []
+
+
+
 
 def _parse_date(date_str):
     """Parse date string to YYYY-MM-DD format."""
