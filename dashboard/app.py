@@ -14,78 +14,63 @@ import numpy as np
 from datetime import datetime, timedelta
 import os
 import sys
+from io import BytesIO
 
 # ==============================================================================
 # 🔌 SAFE DATABASE CONNECTION
 # ==============================================================================
 
-# Add src to path
 src_path = os.path.join(os.path.dirname(__file__), '..', 'src')
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
 def get_db_connection():
-    """Safely get database connection with proper error handling."""
+    """Safely get database connection."""
     try:
-        # Check for Streamlit secrets first
         db_url = None
         if hasattr(st, 'secrets') and 'NEON_DATABASE_URL' in st.secrets:
             db_url = st.secrets['NEON_DATABASE_URL']
-        
         if not db_url:
             db_url = os.getenv('NEON_DATABASE_URL')
-        
         if not db_url:
-            return None, "NEON_DATABASE_URL not found in secrets or environment"
+            return None, "NEON_DATABASE_URL not configured"
         
         import psycopg
         conn = psycopg.connect(db_url)
         return conn, None
-        
     except ImportError:
         return None, "psycopg not installed"
     except Exception as e:
-        return None, f"Connection failed: {str(e)}"
+        return None, f"Connection error: {str(e)}"
 
 
 def fetch_latest_data(limit=5000):
-    """Fetch data directly without going through database.py module."""
+    """Fetch data directly from database."""
     conn, error = get_db_connection()
-    
     if conn is None:
         return None, error
     
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT 
-                bus_id, operator, bus_type,
-                from_city, to_city, travel_date,
-                departure_time, base_price,
-                available_seats, sold_seats,
-                min_price, max_price, scraped_at
-            FROM buses
-            ORDER BY scraped_at DESC
-            LIMIT %s
+            SELECT bus_id, operator, bus_type, from_city, to_city, travel_date,
+                   departure_time, base_price, available_seats, sold_seats,
+                   min_price, max_price, scraped_at
+            FROM buses ORDER BY scraped_at DESC LIMIT %s
         """, (limit,))
         
         columns = [desc[0] for desc in cur.description]
         rows = cur.fetchall()
-        
         cur.close()
         conn.close()
         
-        if rows:
-            return [dict(zip(columns, row)) for row in rows], None
-        else:
-            return None, "No data in database"
-            
+        return [dict(zip(columns, row)) for row in rows] if rows else None, None if rows else "No data found"
     except Exception as e:
         return None, f"Query failed: {str(e)}"
 
 
 # ==============================================================================
-# 🎨 PAGE CONFIG & STYLING
+# 🎨 PAGE CONFIG & PREMIUM STYLING
 # ==============================================================================
 
 st.set_page_config(
@@ -95,86 +80,163 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Clean, professional dark theme
 st.markdown("""
 <style>
-    /* Dark professional background */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    /* Premium dark background */
     .stApp {
-        background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
+        background: linear-gradient(135deg, #0a0e17 0%, #111827 50%, #0d1321 100%);
+        font-family: 'Inter', sans-serif;
     }
     
-    /* Clean metric cards */
+    /* Hero header section */
+    .hero-title {
+        font-size: 2.2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.2rem;
+    }
+    
+    .hero-subtitle {
+        color: #6b7280;
+        font-size: 0.95rem;
+        font-weight: 400;
+    }
+    
+    /* Glass morphism KPI cards */
     div[data-testid="metric-container"] {
-        background: linear-gradient(135deg, #1c2333 0%, #252d3d 100%);
-        border: 1px solid #30363d;
-        padding: 1rem;
-        border-radius: 12px;
+        background: rgba(17, 24, 39, 0.8);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(99, 102, 241, 0.15);
+        border-radius: 16px;
+        padding: 1.2rem 1.5rem;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+        transition: all 0.3s ease;
+    }
+    
+    div[data-testid="metric-container"]:hover {
+        border-color: rgba(99, 102, 241, 0.4);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15);
     }
     
     div[data-testid="metric-container"] label {
-        color: #8b949e !important;
+        color: #9ca3af !important;
+        font-size: 0.85rem !important;
+        font-weight: 500 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     
     div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-        color: #f0f6fc !important;
+        color: #f9fafb !important;
+        font-size: 1.8rem !important;
+        font-weight: 700 !important;
     }
     
     /* Section headers */
-    .section-title {
-        color: #58a6ff;
-        font-size: 1.1rem;
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #60a5fa;
+        font-size: 1rem;
         font-weight: 600;
-        margin: 1rem 0 0.5rem 0;
-        padding-bottom: 0.3rem;
-        border-bottom: 2px solid #21262d;
+        margin: 1.5rem 0 0.75rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(99, 102, 241, 0.2);
     }
     
-    /* Status badges */
+    /* Live badge */
     .badge-live {
-        background: #238636;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: linear-gradient(135deg, #059669 0%, #10b981 100%);
         color: white;
-        padding: 0.25rem 0.75rem;
+        padding: 0.4rem 1rem;
         border-radius: 2rem;
         font-size: 0.75rem;
         font-weight: 600;
+        box-shadow: 0 2px 12px rgba(16, 185, 129, 0.4);
+    }
+    
+    .badge-live::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        background: white;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
     }
     
     .badge-demo {
-        background: #9e6a03;
+        background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
         color: white;
-        padding: 0.25rem 0.75rem;
+        padding: 0.4rem 1rem;
         border-radius: 2rem;
         font-size: 0.75rem;
         font-weight: 600;
     }
-    
-    /* Hide Streamlit branding */
-    #MainMenu, footer, header {visibility: hidden;}
     
     /* Clean dividers */
     hr {
         border: none;
-        border-top: 1px solid #21262d;
-        margin: 1rem 0;
+        border-top: 1px solid rgba(99, 102, 241, 0.1);
+        margin: 1.5rem 0;
+    }
+    
+    /* Data tables */
+    div[data-testid="stDataFrame"] {
+        background: rgba(17, 24, 39, 0.6);
+        border-radius: 12px;
+        border: 1px solid rgba(99, 102, 241, 0.1);
+    }
+    
+    /* Filter section */
+    .filter-container {
+        background: rgba(17, 24, 39, 0.5);
+        border-radius: 12px;
+        padding: 1rem;
+        border: 1px solid rgba(99, 102, 241, 0.1);
+    }
+    
+    /* Hide Streamlit elements */
+    #MainMenu, footer, header {visibility: hidden;}
+    
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1f2937; }
+    ::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 3px; }
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background: rgba(17, 24, 39, 0.8) !important;
+        border-radius: 8px !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ==============================================================================
-# 📊 DATA LOADING
+# 📊 DATA FUNCTIONS
 # ==============================================================================
 
 @st.cache_data(ttl=300)
 def load_data():
     """Load from database or generate demo data."""
     data, error = fetch_latest_data(limit=5000)
-    
     if data:
         return pd.DataFrame(data), None
-    else:
-        # Generate realistic demo data
-        return generate_demo_data(), error
+    return generate_demo_data(), error
 
 
 def generate_demo_data():
@@ -182,41 +244,20 @@ def generate_demo_data():
     np.random.seed(42)
     dates = pd.date_range(start=datetime.now(), periods=14, freq='D')
     records = []
-    
-    routes = [
-        ("Chennai", "Tirunelveli", 1200),
-        ("Tirunelveli", "Chennai", 1200),
-        ("Chennai", "Madurai", 900),
-        ("Madurai", "Chennai", 900),
-        ("Chennai", "Coimbatore", 800),
-        ("Coimbatore", "Chennai", 800)
-    ]
+    routes = [("Chennai", "Tirunelveli", 1200), ("Tirunelveli", "Chennai", 1200),
+              ("Chennai", "Madurai", 900), ("Madurai", "Chennai", 900)]
     
     for d in dates:
-        is_weekend = d.dayofweek >= 5
-        demand_mult = 1.25 if is_weekend else 1.0
-        
         for from_city, to_city, base in routes:
-            price = int(base * demand_mult * np.random.uniform(0.9, 1.15))
-            avail = np.random.randint(8, 28)
-            sold = np.random.randint(12, 35)
-            
+            demand = 1.2 if d.dayofweek >= 5 else 1.0
             records.append({
-                "bus_id": f"VT_{len(records)}",
-                "travel_date": d,
-                "from_city": from_city,
-                "to_city": to_city,
-                "base_price": price,
-                "min_price": int(price * 0.9),
-                "max_price": int(price * 1.1),
-                "available_seats": avail,
-                "sold_seats": sold,
+                "bus_id": f"VT_{len(records)}", "travel_date": d, "from_city": from_city,
+                "to_city": to_city, "base_price": int(base * demand * np.random.uniform(0.9, 1.15)),
+                "available_seats": np.random.randint(8, 28), "sold_seats": np.random.randint(12, 35),
                 "bus_type": np.random.choice(["Volvo Sleeper", "Multi-Axle", "AC Sleeper"]),
-                "operator": "Vignesh TAT",
-                "departure_time": np.random.choice(["20:00", "21:30", "22:00"]),
+                "operator": "Vignesh TAT", "departure_time": np.random.choice(["20:00", "21:30", "22:00"]),
                 "scraped_at": datetime.now()
             })
-    
     return pd.DataFrame(records)
 
 
@@ -224,7 +265,6 @@ def preprocess(df):
     """Add computed columns."""
     if df.empty:
         return df
-    
     df = df.copy()
     df['route'] = df['from_city'] + ' → ' + df['to_city']
     df['total_seats'] = df['sold_seats'] + df['available_seats']
@@ -233,151 +273,231 @@ def preprocess(df):
     df['day_name'] = df['travel_date'].dt.day_name()
     df['day_of_week'] = df['travel_date'].dt.dayofweek
     df['is_weekend'] = df['day_of_week'] >= 5
-    
     if 'scraped_at' in df.columns:
         df['scraped_at'] = pd.to_datetime(df['scraped_at'])
         df['days_to_departure'] = (df['travel_date'] - df['scraped_at'].dt.normalize()).dt.days
     else:
         df['days_to_departure'] = 7
-    
     return df
 
 
+def to_excel(df):
+    """Convert DataFrame to Excel bytes."""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Pricing Data')
+    return output.getvalue()
+
+
 # ==============================================================================
-# 📈 CHART FUNCTIONS
+# 📈 POLISHED CHART FUNCTIONS
 # ==============================================================================
 
-def chart_config():
-    """Common chart configuration."""
+CHART_COLORS = {
+    'primary': '#60a5fa',
+    'secondary': '#f472b6',
+    'accent': '#a78bfa',
+    'success': '#34d399',
+    'warning': '#fbbf24',
+    'danger': '#f87171',
+    'grid': 'rgba(99, 102, 241, 0.1)',
+    'text': '#e5e7eb'
+}
+
+def base_layout(height=350, title=""):
+    """Common chart layout."""
     return {
         "template": "plotly_dark",
         "paper_bgcolor": "rgba(0,0,0,0)",
         "plot_bgcolor": "rgba(0,0,0,0)",
-        "font": {"color": "#c9d1d9", "size": 11},
-        "margin": {"l": 40, "r": 40, "t": 50, "b": 40}
+        "font": {"family": "Inter, sans-serif", "color": CHART_COLORS['text'], "size": 12},
+        "margin": {"l": 50, "r": 30, "t": 60, "b": 50},
+        "height": height,
+        "title": {"text": title, "font": {"size": 15, "color": CHART_COLORS['text']}, "x": 0.02}
     }
 
 
-def price_demand_curve(df):
-    """Price vs Days-to-Departure with Occupancy."""
-    if 'days_to_departure' not in df.columns or df.empty:
+def chart_demand_curve(df):
+    """Price & Occupancy vs Days to Departure - polished dual axis."""
+    if 'days_to_departure' not in df.columns:
         return None
     
     agg = df.groupby('days_to_departure').agg({
-        'base_price': 'mean',
-        'occupancy': 'mean'
+        'base_price': 'mean', 'occupancy': 'mean'
     }).reset_index().sort_values('days_to_departure', ascending=False)
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
+    # Price line with gradient fill
     fig.add_trace(go.Scatter(
         x=agg['days_to_departure'], y=agg['base_price'],
-        mode='lines+markers', name='Price ₹',
-        line=dict(color='#58a6ff', width=2),
-        fill='tozeroy', fillcolor='rgba(88,166,255,0.1)'
+        mode='lines+markers', name='Avg Price ₹',
+        line=dict(color=CHART_COLORS['primary'], width=3, shape='spline'),
+        marker=dict(size=10, color=CHART_COLORS['primary'], line=dict(width=2, color='white')),
+        fill='tozeroy', fillcolor='rgba(96, 165, 250, 0.15)'
     ), secondary_y=False)
     
+    # Occupancy line
     fig.add_trace(go.Scatter(
         x=agg['days_to_departure'], y=agg['occupancy'],
         mode='lines+markers', name='Occupancy %',
-        line=dict(color='#f78166', width=2)
+        line=dict(color=CHART_COLORS['secondary'], width=3, shape='spline'),
+        marker=dict(size=10, color=CHART_COLORS['secondary'], line=dict(width=2, color='white'))
     ), secondary_y=True)
     
-    fig.update_layout(**chart_config(), height=320, title="📈 Price & Demand vs Days Before Travel")
-    fig.update_xaxes(title="Days Until Departure", autorange="reversed")
-    fig.update_yaxes(title="Avg Price ₹", secondary_y=False)
-    fig.update_yaxes(title="Occupancy %", secondary_y=True)
+    fig.update_layout(**base_layout(380, "📈 Price & Demand vs Days Before Travel"))
+    fig.update_xaxes(title="Days Until Departure", autorange="reversed", gridcolor=CHART_COLORS['grid'], showline=True, linecolor=CHART_COLORS['grid'])
+    fig.update_yaxes(title="Avg Price ₹", secondary_y=False, gridcolor=CHART_COLORS['grid'])
+    fig.update_yaxes(title="Occupancy %", secondary_y=True, gridcolor=CHART_COLORS['grid'])
     
     return fig
 
 
-def price_elasticity_scatter(df):
-    """Revenue opportunity analysis."""
+def chart_price_scatter(df):
+    """Price vs Occupancy scatter - polished with better legend."""
+    # Limit to top 6 routes for cleaner legend
+    top_routes = df['route'].value_counts().head(6).index.tolist()
+    df_filtered = df[df['route'].isin(top_routes)]
+    
     fig = px.scatter(
-        df, x='base_price', y='occupancy', color='route',
-        size='total_seats', hover_data=['travel_date', 'bus_type'],
-        title="💹 Price vs Occupancy by Route"
+        df_filtered, x='base_price', y='occupancy', color='route',
+        size='total_seats', size_max=20,
+        hover_data={'travel_date': True, 'bus_type': True, 'base_price': ':.0f', 'occupancy': ':.1f'},
+        color_discrete_sequence=px.colors.qualitative.Set2
     )
-    fig.update_layout(**chart_config(), height=320, showlegend=True, legend=dict(orientation="h", y=-0.15))
+    
+    # Add trend line
+    if len(df) > 10:
+        z = np.polyfit(df['base_price'].dropna(), df['occupancy'].dropna(), 1)
+        p = np.poly1d(z)
+        x_range = np.linspace(df['base_price'].min(), df['base_price'].max(), 50)
+        fig.add_trace(go.Scatter(
+            x=x_range, y=p(x_range), mode='lines', name='Trend',
+            line=dict(color='rgba(255,255,255,0.4)', width=2, dash='dash')
+        ))
+    
+    fig.update_layout(**base_layout(380, "💹 Price vs Occupancy by Route"))
+    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5, font=dict(size=10)))
+    fig.update_xaxes(title="Ticket Price ₹", gridcolor=CHART_COLORS['grid'])
+    fig.update_yaxes(title="Occupancy %", gridcolor=CHART_COLORS['grid'])
+    
     return fig
 
 
-def yield_heatmap(df):
-    """Route × Day pricing matrix."""
+def chart_yield_heatmap(df):
+    """Route × Day yield matrix - polished."""
     pivot = df.pivot_table(values='base_price', index='route', columns='day_name', aggfunc='mean')
+    day_map = {'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 
+               'Thursday': 'Thu', 'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'}
+    pivot = pivot.rename(columns=day_map)
     day_order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    rename_map = {'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed', 
-                  'Thursday': 'Thu', 'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'}
-    pivot = pivot.rename(columns=rename_map)
     pivot = pivot[[d for d in day_order if d in pivot.columns]]
     
     fig = go.Figure(go.Heatmap(
         z=pivot.values, x=pivot.columns, y=pivot.index,
-        colorscale='RdYlGn', text=np.round(pivot.values, 0),
-        texttemplate='₹%{text:.0f}', textfont={"size": 9},
-        hoverongaps=False
+        colorscale=[[0, '#1e3a5f'], [0.5, '#3b82f6'], [1, '#f472b6']],
+        text=np.round(pivot.values, 0), texttemplate='₹%{text:.0f}',
+        textfont={"size": 10, "color": "white"}, hoverongaps=False,
+        colorbar=dict(title="Price ₹", tickfont=dict(color=CHART_COLORS['text']))
     ))
-    fig.update_layout(**chart_config(), height=280, title="🗓️ Yield Matrix: Route × Day")
+    
+    fig.update_layout(**base_layout(320, "🗓️ Yield Matrix: Route × Day"))
+    
     return fig
 
 
-def weekend_bar(df):
-    """Weekend premium comparison."""
+def chart_weekend_comparison(df):
+    """Weekend vs Weekday comparison - polished bar chart."""
     if not df['is_weekend'].any() or df['is_weekend'].all():
         return None
     
-    wkday = df[~df['is_weekend']]['base_price'].mean()
-    wkend = df[df['is_weekend']]['base_price'].mean()
-    premium = ((wkend - wkday) / wkday * 100) if wkday > 0 else 0
+    wkday_price = df[~df['is_weekend']]['base_price'].mean()
+    wkend_price = df[df['is_weekend']]['base_price'].mean()
+    wkday_occ = df[~df['is_weekend']]['occupancy'].mean()
+    wkend_occ = df[df['is_weekend']]['occupancy'].mean()
+    premium = ((wkend_price - wkday_price) / wkday_price * 100) if wkday_price > 0 else 0
     
-    fig = go.Figure(go.Bar(
-        x=['Weekday', 'Weekend'], y=[wkday, wkend],
-        marker_color=['#58a6ff', '#f78166'],
-        text=[f'₹{wkday:.0f}', f'₹{wkend:.0f}'], textposition='outside'
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        name='Avg Price', x=['Weekday', 'Weekend'], y=[wkday_price, wkend_price],
+        marker=dict(color=[CHART_COLORS['primary'], CHART_COLORS['secondary']], 
+                    line=dict(width=0)),
+        text=[f'₹{wkday_price:.0f}', f'₹{wkend_price:.0f}'], textposition='outside',
+        textfont=dict(color=CHART_COLORS['text'], size=12)
     ))
-    fig.update_layout(**chart_config(), height=250, title=f"📊 Weekend Premium: +{premium:.1f}%", showlegend=False)
+    
+    title_text = f"📊 Weekend Premium: {premium:+.1f}%"
+    fig.update_layout(**base_layout(300, title_text))
+    fig.update_layout(showlegend=False, bargap=0.4)
+    fig.update_yaxes(title="Avg Price ₹", gridcolor=CHART_COLORS['grid'])
+    
     return fig
 
 
-def occupancy_dial(occ):
-    """Gauge for fleet occupancy."""
-    color = '#238636' if occ >= 70 else '#9e6a03' if occ >= 50 else '#da3633'
+def chart_occupancy_gauge(occ):
+    """Fleet occupancy gauge - polished."""
+    if occ >= 70:
+        color = CHART_COLORS['success']
+    elif occ >= 50:
+        color = CHART_COLORS['warning']
+    else:
+        color = CHART_COLORS['danger']
     
     fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=occ,
-        number={'suffix': '%', 'font': {'size': 28, 'color': '#f0f6fc'}},
+        mode="gauge+number",
+        value=occ,
+        number={'suffix': '%', 'font': {'size': 36, 'color': CHART_COLORS['text'], 'family': 'Inter'}},
         gauge={
-            'axis': {'range': [0, 100], 'tickcolor': '#484f58'},
-            'bar': {'color': color},
-            'bgcolor': '#21262d',
+            'axis': {'range': [0, 100], 'tickcolor': '#4b5563', 'tickwidth': 1},
+            'bar': {'color': color, 'thickness': 0.8},
+            'bgcolor': '#1f2937',
+            'borderwidth': 0,
             'steps': [
-                {'range': [0, 50], 'color': 'rgba(218,54,51,0.2)'},
-                {'range': [50, 70], 'color': 'rgba(158,106,3,0.2)'},
-                {'range': [70, 100], 'color': 'rgba(35,134,54,0.2)'}
+                {'range': [0, 50], 'color': 'rgba(248, 113, 113, 0.15)'},
+                {'range': [50, 70], 'color': 'rgba(251, 191, 36, 0.15)'},
+                {'range': [70, 100], 'color': 'rgba(52, 211, 153, 0.15)'}
             ]
         }
     ))
-    fig.update_layout(height=200, paper_bgcolor='rgba(0,0,0,0)', margin=dict(t=30, b=10))
+    
+    fig.update_layout(height=230, paper_bgcolor='rgba(0,0,0,0)', margin=dict(t=40, b=20, l=30, r=30))
+    
     return fig
 
 
-def route_ranking(df):
-    """Bar chart of route occupancy."""
+def chart_route_ranking(df):
+    """Route occupancy ranking - horizontal bar."""
     route_stats = df.groupby('route')['occupancy'].mean().sort_values().reset_index()
+    
+    colors = [CHART_COLORS['danger'] if v < 50 else CHART_COLORS['warning'] if v < 70 else CHART_COLORS['success'] 
+              for v in route_stats['occupancy']]
     
     fig = go.Figure(go.Bar(
         y=route_stats['route'], x=route_stats['occupancy'],
-        orientation='h', marker_color='#58a6ff',
-        text=route_stats['occupancy'].round(1).astype(str) + '%', textposition='inside'
+        orientation='h', marker_color=colors,
+        text=route_stats['occupancy'].round(1).astype(str) + '%',
+        textposition='inside', textfont=dict(color='white', size=11)
     ))
-    fig.update_layout(**chart_config(), height=280, title="🛤️ Route Occupancy Ranking", showlegend=False)
+    
+    fig.update_layout(**base_layout(320, "🛤️ Route Occupancy Ranking"))
+    fig.update_layout(showlegend=False)
+    fig.update_xaxes(title="Avg Occupancy %", gridcolor=CHART_COLORS['grid'])
+    
     return fig
 
 
-def bus_type_box(df):
-    """Price distribution by bus type."""
-    fig = px.box(df, x='bus_type', y='base_price', color='bus_type', title="🚌 Price by Coach Type")
-    fig.update_layout(**chart_config(), height=280, showlegend=False)
+def chart_bus_type_box(df):
+    """Price distribution by bus type - polished box plot."""
+    fig = px.box(df, x='bus_type', y='base_price', color='bus_type',
+                 color_discrete_sequence=[CHART_COLORS['primary'], CHART_COLORS['secondary'], 
+                                          CHART_COLORS['accent'], CHART_COLORS['success']])
+    
+    fig.update_layout(**base_layout(320, "🚌 Price Distribution by Coach"))
+    fig.update_layout(showlegend=False)
+    fig.update_xaxes(title="", gridcolor=CHART_COLORS['grid'])
+    fig.update_yaxes(title="Price ₹", gridcolor=CHART_COLORS['grid'])
+    
     return fig
 
 
@@ -386,103 +506,173 @@ def bus_type_box(df):
 # ==============================================================================
 
 def main():
-    # Header
-    col1, col2 = st.columns([4, 1])
+    # ===== HERO HEADER =====
+    col1, col2 = st.columns([5, 1])
+    
     with col1:
-        st.markdown("## 🎯 Dynamic Pricing Intelligence")
-        st.caption("Sciative + RevMax Analytics • Vignesh TAT")
+        st.markdown("<h1 class='hero-title'>🎯 Dynamic Pricing Intelligence</h1>", unsafe_allow_html=True)
+        st.markdown("<p class='hero-subtitle'>Sciative + RevMax Analytics • Powered by Vignesh TAT Data Pipeline</p>", unsafe_allow_html=True)
     
     # Load data
     df, error = load_data()
     
     with col2:
         if error:
-            st.markdown(f"<span class='badge-demo'>⚠ DEMO</span>", unsafe_allow_html=True)
+            st.markdown("<span class='badge-demo'>⚠️ DEMO</span>", unsafe_allow_html=True)
             with st.expander("Details"):
-                st.code(error, language=None)
+                st.code(error)
         else:
-            st.markdown("<span class='badge-live'>● LIVE</span>", unsafe_allow_html=True)
+            st.markdown("<span class='badge-live'>LIVE</span>", unsafe_allow_html=True)
     
     df = preprocess(df)
+    st.markdown("---")
     
-    st.divider()
-    
-    # ===== KPIs =====
+    # ===== KPI CARDS =====
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Records", f"{len(df):,}")
-    k2.metric("Avg Price", f"₹{df['base_price'].mean():,.0f}")
-    k3.metric("Avg Occupancy", f"{df['occupancy'].mean():.1f}%")
-    k4.metric("Seats Sold", f"{df['sold_seats'].sum():,}")
+    k1.metric("📊 Records", f"{len(df):,}")
+    k2.metric("💰 Avg Price", f"₹{df['base_price'].mean():,.0f}")
+    k3.metric("📈 Avg Occupancy", f"{df['occupancy'].mean():.1f}%")
+    k4.metric("🎫 Seats Sold", f"{df['sold_seats'].sum():,}")
     
     if df['is_weekend'].any() and (~df['is_weekend']).any():
-        wknd_prem = ((df[df['is_weekend']]['base_price'].mean() / df[~df['is_weekend']]['base_price'].mean()) - 1) * 100
-        k5.metric("Weekend Lift", f"+{wknd_prem:.1f}%")
+        wknd = df[df['is_weekend']]['base_price'].mean()
+        wkdy = df[~df['is_weekend']]['base_price'].mean()
+        prem = ((wknd / wkdy) - 1) * 100 if wkdy > 0 else 0
+        k5.metric("🗓️ Weekend Lift", f"{prem:+.1f}%")
     else:
-        k5.metric("Weekend Lift", "—")
+        k5.metric("🗓️ Weekend Lift", "—")
     
-    st.divider()
+    st.markdown("---")
     
-    # ===== Row 1: Demand Curves =====
-    st.markdown("<div class='section-title'>📈 Demand & Price Analytics</div>", unsafe_allow_html=True)
+    # ===== ROW 1: DEMAND ANALYTICS =====
+    st.markdown("<div class='section-header'>📈 Demand & Price Analytics</div>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     
     with c1:
-        fig = price_demand_curve(df)
+        fig = chart_demand_curve(df)
         if fig:
             st.plotly_chart(fig, use_container_width=True)
     
     with c2:
-        st.plotly_chart(price_elasticity_scatter(df), use_container_width=True)
+        st.plotly_chart(chart_price_scatter(df), use_container_width=True)
     
-    st.divider()
+    st.markdown("---")
     
-    # ===== Row 2: Yield Management =====
-    st.markdown("<div class='section-title'>🎯 Yield Management</div>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([3, 2, 2])
+    # ===== ROW 2: YIELD MANAGEMENT =====
+    st.markdown("<div class='section-header'>🎯 Yield Management</div>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([2.5, 1.5, 1.5])
     
     with c1:
-        st.plotly_chart(yield_heatmap(df), use_container_width=True)
+        st.plotly_chart(chart_yield_heatmap(df), use_container_width=True)
     
     with c2:
-        fig = weekend_bar(df)
+        fig = chart_weekend_comparison(df)
         if fig:
             st.plotly_chart(fig, use_container_width=True)
     
     with c3:
-        st.markdown("**Fleet Occupancy**")
-        st.plotly_chart(occupancy_dial(df['occupancy'].mean()), use_container_width=True)
+        st.markdown("##### 🎯 Fleet Occupancy")
+        st.plotly_chart(chart_occupancy_gauge(df['occupancy'].mean()), use_container_width=True)
     
-    st.divider()
+    st.markdown("---")
     
-    # ===== Row 3: Route & Type Analysis =====
-    st.markdown("<div class='section-title'>🛤️ Route & Fleet Analysis</div>", unsafe_allow_html=True)
+    # ===== ROW 3: ROUTE & FLEET =====
+    st.markdown("<div class='section-header'>🛤️ Route & Fleet Analysis</div>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     
     with c1:
-        st.plotly_chart(route_ranking(df), use_container_width=True)
+        st.plotly_chart(chart_route_ranking(df), use_container_width=True)
     
     with c2:
-        st.plotly_chart(bus_type_box(df), use_container_width=True)
+        st.plotly_chart(chart_bus_type_box(df), use_container_width=True)
     
-    st.divider()
+    st.markdown("---")
     
-    # ===== Data Export =====
-    st.markdown("<div class='section-title'>📥 ML Training Data</div>", unsafe_allow_html=True)
+    # ===== DATA TABLE WITH FILTERS =====
+    st.markdown("<div class='section-header'>📥 ML Training Data Export</div>", unsafe_allow_html=True)
     
-    with st.expander("Download Data for Dynamic Pricing Model", expanded=False):
-        cols = ['travel_date', 'day_name', 'day_of_week', 'is_weekend', 'days_to_departure',
-                'route', 'bus_type', 'base_price', 'available_seats', 'sold_seats', 'occupancy']
-        export_cols = [c for c in cols if c in df.columns]
+    # Filter controls
+    with st.container():
+        f1, f2, f3, f4 = st.columns(4)
         
-        st.dataframe(df[export_cols].head(100), use_container_width=True, height=300)
+        with f1:
+            routes_list = ['All Routes'] + sorted(df['route'].unique().tolist())
+            selected_routes = st.multiselect("🛤️ Routes", routes_list, default=['All Routes'])
         
-        csv = df[export_cols].to_csv(index=False).encode('utf-8')
-        st.download_button("⬇️ Download CSV", data=csv, 
-                           file_name=f"pricing_data_{datetime.now().strftime('%Y%m%d')}.csv",
-                           mime="text/csv")
+        with f2:
+            types_list = ['All Types'] + sorted(df['bus_type'].unique().tolist())
+            selected_types = st.multiselect("🚌 Coach Type", types_list, default=['All Types'])
+        
+        with f3:
+            min_price, max_price = int(df['base_price'].min()), int(df['base_price'].max())
+            price_range = st.slider("💰 Price Range", min_price, max_price, (min_price, max_price))
+        
+        with f4:
+            occ_range = st.slider("📈 Occupancy %", 0, 100, (0, 100))
+    
+    # Apply filters
+    mask = pd.Series([True] * len(df))
+    
+    if 'All Routes' not in selected_routes and selected_routes:
+        mask &= df['route'].isin(selected_routes)
+    
+    if 'All Types' not in selected_types and selected_types:
+        mask &= df['bus_type'].isin(selected_types)
+    
+    mask &= (df['base_price'] >= price_range[0]) & (df['base_price'] <= price_range[1])
+    mask &= (df['occupancy'] >= occ_range[0]) & (df['occupancy'] <= occ_range[1])
+    
+    filtered_df = df[mask]
+    
+    # Display columns
+    display_cols = ['travel_date', 'day_name', 'route', 'bus_type', 'departure_time',
+                    'base_price', 'available_seats', 'sold_seats', 'occupancy', 'days_to_departure']
+    display_cols = [c for c in display_cols if c in filtered_df.columns]
+    
+    # Stats row
+    st.markdown(f"**Showing {len(filtered_df):,} of {len(df):,} records** | "
+                f"Avg Price: ₹{filtered_df['base_price'].mean():,.0f} | "
+                f"Avg Occupancy: {filtered_df['occupancy'].mean():.1f}%")
+    
+    # Data table
+    st.dataframe(
+        filtered_df[display_cols].sort_values('travel_date', ascending=False),
+        use_container_width=True,
+        height=400,
+        column_config={
+            "travel_date": st.column_config.DateColumn("Travel Date", format="DD-MMM-YYYY"),
+            "base_price": st.column_config.NumberColumn("Price ₹", format="₹%d"),
+            "occupancy": st.column_config.ProgressColumn("Occupancy", min_value=0, max_value=100, format="%.1f%%"),
+        }
+    )
+    
+    # Export buttons
+    st.markdown("#### 📥 Download Data")
+    e1, e2, e3 = st.columns([1, 1, 3])
+    
+    with e1:
+        csv_data = filtered_df[display_cols].to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "⬇️ Download CSV",
+            data=csv_data,
+            file_name=f"pricing_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    
+    with e2:
+        excel_data = to_excel(filtered_df[display_cols])
+        st.download_button(
+            "⬇️ Download Excel",
+            data=excel_data,
+            file_name=f"pricing_data_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
     
     # Footer
-    st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M IST')} • Pipeline: Oracle Cron → Neon DB → Dashboard")
+    st.markdown("---")
+    st.caption(f"🚌 Vignesh TAT Dynamic Pricing System • Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M IST')}")
 
 
 if __name__ == "__main__":
