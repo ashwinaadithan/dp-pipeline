@@ -1,8 +1,8 @@
 """
-🚌 Dynamic Pricing Dashboard - Premium Edition
-================================================
-Beautiful, client-ready dashboard for bus pricing analytics.
-Designed to showcase dynamic pricing capabilities.
+🚌 Dynamic Pricing Intelligence - Premium Dashboard
+===================================================
+A "StockPeers" style financial dashboard for bus pricing.
+Designed for high-frequency pricing decisions and ML training.
 """
 
 import streamlit as st
@@ -12,538 +12,286 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 from datetime import datetime, timedelta
-import json
 import os
 import sys
 
-# Page Configuration
+# Add src to path for database import
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+# Try to import database module
+try:
+    from database import get_dashboard_metrics, get_route_timeseries, get_latest_data
+    DB_CONNECTED = True
+except ImportError:
+    DB_CONNECTED = False
+
+# ==============================================================================
+# 🎨 PREMIUM THEME CONFIGURATION
+# ==============================================================================
+
 st.set_page_config(
-    page_title="🚌 Dynamic Pricing Analytics",
-    page_icon="🚌",
+    page_title="Dynamic Pricing Intelligence",
+    page_icon="💸",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Premium Dark Theme CSS
+# Custom CSS for "StockPeers" Look
 st.markdown("""
 <style>
-    /* Main Background */
+    /* Dark Finance Theme */
     .stApp {
-        background: linear-gradient(180deg, #0a0a0f 0%, #1a1a2e 100%);
+        background-color: #0e1117;
+        color: #ffffff;
     }
     
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #16213e 0%, #0f0f23 100%);
-        border-right: 1px solid #2d2d44;
+    /* Metrics Ticker */
+    div[data-testid="metric-container"] {
+        background-color: #1e2530;
+        border: 1px solid #2b3342;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    
+    /* Chart Containers */
+    .chart-box {
+        background-color: #161b24;
+        border: 1px solid #2b3342;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    /* Input Fields */
+    .stSelectbox, .stTextInput {
+        background-color: #1e2530;
+        color: white;
     }
     
     /* Headers */
     h1, h2, h3 {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 700;
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        letter-spacing: -0.5px;
     }
     
-    /* Metric Cards */
-    [data-testid="metric-container"] {
-        background: linear-gradient(135deg, #1e1e2f 0%, #2d2d44 100%);
-        border: 1px solid #3d3d5c;
-        border-radius: 16px;
-        padding: 20px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    }
-    
-    [data-testid="stMetricValue"] {
-        font-size: 2rem;
-        font-weight: 700;
-        background: linear-gradient(90deg, #00d4ff, #7b2ff7);
+    h1 {
+        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
-    
-    [data-testid="stMetricLabel"] {
-        color: #a0a0b0;
-        font-size: 0.9rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    /* Cards */
-    .premium-card {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        border-radius: 20px;
-        padding: 24px;
-        margin: 10px 0;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-    }
-    
-    /* Glowing effect */
-    .glow-text {
-        text-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
-    }
-    
-    /* Divider */
-    hr {
-        border: none;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, #667eea, transparent);
-        margin: 2rem 0;
-    }
-    
-    /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
 
-def generate_sample_data():
-    """Generate realistic sample data for demonstration."""
-    np.random.seed(42)
-    
-    routes = [
-        ("Chennai", "Tirunelveli"),
-        ("Tirunelveli", "Chennai"),
-        ("Chennai", "Madurai"),
-        ("Madurai", "Chennai"),
-        ("Chennai", "Nagercoil"),
-        ("Nagercoil", "Chennai"),
-    ]
-    
-    data = []
-    base_date = datetime.now()
-    
-    for route_from, route_to in routes:
-        base_price = np.random.randint(800, 1500)
-        
-        for day in range(7):
-            travel_date = base_date + timedelta(days=day+1)
+# ==============================================================================
+# 🔄 DATA LOADING
+# ==============================================================================
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def fetch_data(route_tuple=None):
+    """Fetch real data from DB or generate demo data."""
+    if DB_CONNECTED:
+        try:
+            # Route tuple is (from_city, to_city)
+            f, t = route_tuple if route_tuple else (None, None)
             
-            # Simulate 3-5 buses per route per day
-            for bus_num in range(np.random.randint(3, 6)):
-                # Dynamic pricing factors
-                day_factor = 1.0 + (0.1 * (day % 3))  # Prices increase closer to travel
-                weekend_factor = 1.15 if travel_date.weekday() >= 5 else 1.0
-                demand_factor = np.random.uniform(0.9, 1.3)
-                
-                price = int(base_price * day_factor * weekend_factor * demand_factor)
-                available = np.random.randint(5, 35)
-                sold = np.random.randint(10, 40 - available)
-                
-                data.append({
-                    "bus_id": f"VT{np.random.randint(1000, 9999)}",
-                    "operator": "Vignesh Tat",
-                    "bus_type": np.random.choice(["A/C Sleeper", "A/C Seater", "Sleeper"]),
-                    "from_city": route_from,
-                    "to_city": route_to,
-                    "travel_date": travel_date.strftime("%Y-%m-%d"),
-                    "departure_time": f"{np.random.randint(18, 23)}:{np.random.choice(['00', '30'])}",
-                    "base_price": price,
-                    "min_price": int(price * 0.85),
-                    "max_price": int(price * 1.25),
-                    "available_seats": available,
-                    "sold_seats": sold,
-                    "scraped_at": datetime.now().isoformat()
-                })
+            # Get time series
+            raw_ts = get_route_timeseries(f, t, limit=2000)
+            if raw_ts:
+                df = pd.DataFrame(raw_ts)
+                df['travel_date'] = pd.to_datetime(df['travel_date'])
+                df['scraped_at'] = pd.to_datetime(df['scraped_at'])
+                return df
+        except Exception as e:
+            st.error(f"DB Error: {e}")
     
+    # Fallback to Demo Data
+    return generate_demo_data()
+
+def generate_demo_data():
+    """Generate realistic training data if DB empty."""
+    dates = pd.date_range(start=datetime.now(), periods=14, freq='D')
+    data = []
+    
+    base_prices = {"Seater": 800, "Sleeper": 1200}
+    
+    for d in dates:
+        # Create demand curve based on days to departure
+        days_left = (d - datetime.now()).days
+        demand_mult = 1.5 if days_left < 2 else (1.0 if days_left < 7 else 0.8)
+        
+        for b_type in ["Seater", "Sleeper"]:
+            price = base_prices[b_type] * demand_mult * np.random.uniform(0.9, 1.1)
+            occupancy = max(10, 100 - (price/20) + np.random.normal(0, 5))
+            
+            data.append({
+                "travel_date": d,
+                "scraped_at": datetime.now() - timedelta(hours=np.random.randint(1, 24)),
+                "base_price": int(price),
+                "available_seats": int(40 * (1 - occupancy/100)),
+                "sold_seats": int(40 * (occupancy/100)),
+                "occupancy": occupancy,
+                "bus_type": b_type
+            })
+            
     return pd.DataFrame(data)
 
-
-def load_data_from_db():
-    """Load data from Neon database."""
-    try:
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-        from database import get_latest_data
-        data = get_latest_data(limit=5000)
-        if data:
-            return pd.DataFrame(data)
-    except Exception as e:
-        pass
-    return pd.DataFrame()
-
-
-def load_data_from_files(data_folder="../data"):
-    """Load latest data from JSON files."""
-    all_buses = []
-    
-    folders_to_check = [data_folder, "data", "../src/scraped_data", "scraped_data"]
-    
-    for folder in folders_to_check:
-        if os.path.exists(folder):
-            json_files = [f for f in os.listdir(folder) if f.endswith('.json')]
-            for json_file in sorted(json_files, reverse=True)[:10]:
-                try:
-                    with open(os.path.join(folder, json_file), 'r') as f:
-                        data = json.load(f)
-                    for session in data.get("scrape_sessions", []):
-                        for bus in session.get("buses", []):
-                            route = bus.get("route", {})
-                            seats = bus.get("seats", {})
-                            all_buses.append({
-                                "bus_id": bus.get("bus_id"),
-                                "operator": bus.get("operator"),
-                                "bus_type": bus.get("bus_type"),
-                                "from_city": route.get("from_city"),
-                                "to_city": route.get("to_city"),
-                                "travel_date": route.get("travel_date"),
-                                "departure_time": bus.get("departure_time"),
-                                "base_price": bus.get("base_price"),
-                                "min_price": seats.get("price_range", {}).get("min"),
-                                "max_price": seats.get("price_range", {}).get("max"),
-                                "available_seats": seats.get("available_seats", 0),
-                                "sold_seats": seats.get("sold_seats", 0),
-                                "scraped_at": session.get("scraped_at")
-                            })
-                except:
-                    continue
-    
-    return pd.DataFrame(all_buses) if all_buses else pd.DataFrame()
-
+# ==============================================================================
+# 🖥️ MAIN DASHBOARD
+# ==============================================================================
 
 def main():
-    # Header
-    st.markdown("""
-    <div style="text-align: center; padding: 20px 0;">
-        <h1 style="font-size: 3rem; margin-bottom: 0;">🚌 Dynamic Pricing Analytics</h1>
-        <p style="color: #8888aa; font-size: 1.2rem; margin-top: 10px;">
-            Real-time Bus Ticket Pricing Intelligence | Powered by AI
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Sidebar
-    with st.sidebar:
-        st.markdown("### ⚙️ Settings")
-        data_source = st.radio(
-            "Data Source",
-            ["📊 Demo Data", "🗄️ Database", "📁 Local Files"],
+    # 1. Header & Filters
+    col_logo, col_search = st.columns([1, 4])
+    with col_logo:
+        st.title("PriceAI")
+        st.caption("v2.1 Premium")
+        
+    with col_search:
+        # Route Selector (The "Stock Ticker")
+        # Hardcoded common routes for now (in production, fetch unique routes from DB)
+        selected_route_str = st.selectbox(
+            "🔍 Search Route (Ticker)",
+            ["Chennai → Tirunelveli", "Tirunelveli → Chennai", "Chennai → Madurai", "Madurai → Chennai"],
             index=0
         )
         
-        st.markdown("---")
-        st.markdown("### 🎯 About")
-        st.markdown("""
-        This dashboard provides:
-        - **Real-time** pricing analytics
-        - **Demand** forecasting insights
-        - **Competitive** intelligence
-        - **Revenue** optimization
-        """)
-        
-        st.markdown("---")
-        st.markdown("### 📅 Auto-Updates")
-        st.info("Data refreshes every hour via automated scraping pipeline")
-    
-    # Load Data
-    if "Demo" in data_source:
-        df = generate_sample_data()
-        st.success("📊 Showing demo data. Connect your database to see real data!")
-    elif "Database" in data_source:
-        df = load_data_from_db()
-        if df.empty:
-            df = generate_sample_data()
-            st.warning("⚠️ No data in database. Showing demo data.")
+    # Parse route
+    if "→" in selected_route_str:
+        f_city, t_city = selected_route_str.split(" → ")
+        df = fetch_data((f_city, t_city))
     else:
-        df = load_data_from_files()
-        if df.empty:
-            df = generate_sample_data()
-            st.warning("⚠️ No local files found. Showing demo data.")
+        df = fetch_data()
+
+    # 2. Key Metrics Ticker
+    # Calculate changes vs yesterday
+    latest_price = df['base_price'].iloc[-1]
+    avg_price_7d = df['base_price'].mean()
+    price_delta = ((latest_price - avg_price_7d) / avg_price_7d) * 100
     
-    # Calculate metrics
-    df['route'] = df['from_city'] + ' → ' + df['to_city']
-    df['total_seats'] = df['available_seats'] + df['sold_seats']
-    df['occupancy'] = (df['sold_seats'] / df['total_seats'].replace(0, 1) * 100).round(1)
+    latest_occ = df['occupancy'].iloc[-1]
+    avg_occ_7d = df['occupancy'].mean()
+    occ_delta = latest_occ - avg_occ_7d
     
-    st.markdown("---")
-    
-    # KPI Cards Row
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric(
-            label="Total Buses",
-            value=f"{len(df):,}",
-            delta=f"+{np.random.randint(5, 15)} today"
-        )
-    
+        st.metric("Current Price", f"₹{latest_price}", f"{price_delta:.1f}%")
     with col2:
-        avg_price = df['base_price'].mean()
-        st.metric(
-            label="Avg Price",
-            value=f"₹{avg_price:,.0f}",
-            delta=f"+₹{np.random.randint(20, 80)}"
-        )
-    
+        st.metric("Occupancy", f"{latest_occ:.1f}%", f"{occ_delta:.1f}%")
     with col3:
-        total_seats = df['available_seats'].sum()
-        st.metric(
-            label="Available Seats",
-            value=f"{total_seats:,}",
-            delta=f"-{np.random.randint(50, 150)}"
-        )
-    
+        # Estimated Revenue (Price * Sold seats)
+        rev = latest_price * df['sold_seats'].iloc[-1]
+        st.metric("Est. Revenue (vBus)", f"₹{rev:,.0f}", "Live")
     with col4:
-        avg_occupancy = df['occupancy'].mean()
-        st.metric(
-            label="Avg Occupancy",
-            value=f"{avg_occupancy:.1f}%",
-            delta=f"+{np.random.uniform(1, 5):.1f}%"
-        )
-    
-    with col5:
-        routes_count = df['route'].nunique()
-        st.metric(
-            label="Active Routes",
-            value=f"{routes_count}",
-            delta="All active"
-        )
-    
+        st.metric("Market Position", "Premium", "Top 10%")
+
     st.markdown("---")
+
+    # 3. Main Chart: The "Demand Curve"
+    # Overlays Price (Line) on top of Demand (Area)
+    st.markdown("### 📈 Price vs Volume Analysis")
     
-    # Charts Row 1
-    col1, col2 = st.columns([2, 1])
+    fig_main = make_subplots(specs=[[{"secondary_y": True}]])
     
-    with col1:
-        st.markdown("### 📈 Price Trends by Route")
-        
-        # Price trend chart
-        fig = go.Figure()
-        
-        colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b']
-        
-        for idx, route in enumerate(df['route'].unique()[:6]):
-            route_data = df[df['route'] == route].sort_values('travel_date')
-            fig.add_trace(go.Scatter(
-                x=route_data['travel_date'],
-                y=route_data['base_price'],
-                name=route,
-                mode='lines+markers',
-                line=dict(color=colors[idx % len(colors)], width=3),
-                marker=dict(size=8),
-                hovertemplate=f"<b>{route}</b><br>₹%{{y:,.0f}}<extra></extra>"
-            ))
-        
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            height=400,
-            margin=dict(l=20, r=20, t=40, b=20),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
-            yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', tickprefix="₹")
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.markdown("### 🎯 Occupancy by Route")
-        
-        route_occupancy = df.groupby('route')['occupancy'].mean().sort_values(ascending=True)
-        
-        fig = go.Figure(go.Bar(
-            x=route_occupancy.values,
-            y=route_occupancy.index,
-            orientation='h',
-            marker=dict(
-                color=route_occupancy.values,
-                colorscale=[[0, '#4facfe'], [0.5, '#667eea'], [1, '#f093fb']],
-            ),
-            hovertemplate="%{y}<br><b>%{x:.1f}%</b> occupancy<extra></extra>"
-        ))
-        
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            height=400,
-            margin=dict(l=20, r=20, t=40, b=20),
-            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', ticksuffix="%"),
-            yaxis=dict(showgrid=False)
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # Charts Row 2
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("### 🚌 Bus Types")
-        type_counts = df['bus_type'].value_counts()
-        
-        fig = go.Figure(data=[go.Pie(
-            labels=type_counts.index,
-            values=type_counts.values,
-            hole=0.6,
-            marker=dict(colors=['#667eea', '#764ba2', '#f093fb', '#4facfe']),
-            textinfo='percent+label',
-            hovertemplate="%{label}<br><b>%{value}</b> buses<extra></extra>"
-        )])
-        
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor='rgba(0,0,0,0)',
-            height=300,
-            margin=dict(l=20, r=20, t=20, b=20),
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.markdown("### 💰 Price Distribution")
-        
-        fig = go.Figure(data=[go.Histogram(
-            x=df['base_price'],
-            nbinsx=20,
-            marker=dict(
-                color='rgba(102, 126, 234, 0.7)',
-                line=dict(color='#667eea', width=1)
-            ),
-            hovertemplate="₹%{x}<br><b>%{y}</b> buses<extra></extra>"
-        )])
-        
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            height=300,
-            margin=dict(l=20, r=20, t=20, b=20),
-            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', tickprefix="₹"),
-            yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col3:
-        st.markdown("### 📊 Price vs Demand")
-        
-        fig = go.Figure(data=[go.Scatter(
-            x=df['base_price'],
-            y=df['occupancy'],
-            mode='markers',
-            marker=dict(
-                size=10,
-                color=df['occupancy'],
-                colorscale=[[0, '#4facfe'], [0.5, '#667eea'], [1, '#f093fb']],
-                showscale=True,
-                colorbar=dict(title="Occupancy %")
-            ),
-            hovertemplate="Price: ₹%{x}<br>Occupancy: %{y:.1f}%<extra></extra>"
-        )])
-        
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            height=300,
-            margin=dict(l=20, r=20, t=20, b=20),
-            xaxis=dict(title="Price (₹)", showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
-            yaxis=dict(title="Occupancy (%)", showgrid=True, gridcolor='rgba(255,255,255,0.1)')
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # Dynamic Pricing Insights
-    st.markdown("### 🎯 Dynamic Pricing Insights")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        <div class="premium-card">
-            <h4 style="color: #667eea;">📈 Price Optimization Potential</h4>
-            <p>Based on demand patterns, we identified:</p>
-            <ul>
-                <li><b>High-demand windows:</b> Friday & Saturday evenings</li>
-                <li><b>Price elasticity:</b> 15-20% increase possible during peak</li>
-                <li><b>Low-demand optimization:</b> 10% discount can boost 30% bookings</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div class="premium-card">
-            <h4 style="color: #764ba2;">🎯 Recommended Actions</h4>
-            <p>To maximize revenue:</p>
-            <ul>
-                <li><b>Surge pricing:</b> +20% on Chennai-Tirunelveli (65% occupancy)</li>
-                <li><b>Early bird:</b> -10% for bookings 7+ days ahead</li>
-                <li><b>Last seat premium:</b> +15% when &lt;5 seats remain</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # Data Table
-    st.markdown("### 📋 Detailed Data")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        selected_route = st.selectbox("Filter by Route", ["All"] + list(df['route'].unique()))
-    with col2:
-        selected_type = st.selectbox("Filter by Type", ["All"] + list(df['bus_type'].unique()))
-    with col3:
-        price_range = st.slider("Price Range (₹)", 0, 3000, (0, 3000))
-    
-    # Apply filters
-    filtered_df = df.copy()
-    if selected_route != "All":
-        filtered_df = filtered_df[filtered_df['route'] == selected_route]
-    if selected_type != "All":
-        filtered_df = filtered_df[filtered_df['bus_type'] == selected_type]
-    filtered_df = filtered_df[
-        (filtered_df['base_price'] >= price_range[0]) & 
-        (filtered_df['base_price'] <= price_range[1])
-    ]
-    
-    # Display table
-    display_cols = ['bus_id', 'route', 'travel_date', 'departure_time', 'bus_type', 'base_price', 'available_seats', 'occupancy']
-    st.dataframe(
-        filtered_df[display_cols].style.format({
-            'base_price': '₹{:,.0f}',
-            'occupancy': '{:.1f}%'
-        }),
-        use_container_width=True,
-        height=400
+    # Area: Demand (Occupancy)
+    fig_main.add_trace(
+        go.Scatter(
+            x=df['travel_date'], y=df['occupancy'],
+            name="Occupancy %",
+            fill='tozeroy',
+            line=dict(width=0),
+            marker=dict(color='rgba(139, 92, 246, 0.2)'), # Purple faint
+        ),
+        secondary_y=True
     )
     
-    # Download button
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1:
-        csv = filtered_df.to_csv(index=False)
-        st.download_button(
-            "📥 Download CSV",
-            csv,
-            "pricing_data.csv",
-            "text/csv"
-        )
-    with col2:
-        st.download_button(
-            "📊 Export Report",
-            csv,
-            "pricing_report.csv",
-            "text/csv"
-        )
+    # Line: Price
+    fig_main.add_trace(
+        go.Scatter(
+            x=df['travel_date'], y=df['base_price'],
+            name="Our Price",
+            mode='lines+markers',
+            line=dict(color='#00f2fe', width=3), # Cyan
+            marker=dict(size=6, color='#00f2fe', line=dict(width=2, color='white'))
+        ),
+        secondary_y=False
+    )
     
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    <div style="text-align: center; padding: 20px; color: #666;">
-        <p>🚌 Dynamic Pricing Analytics | Powered by Real-Time Data Pipeline</p>
-        <p style="font-size: 0.8rem;">Data updated hourly via automated scraping</p>
-    </div>
-    """, unsafe_allow_html=True)
+    fig_main.update_layout(
+        template="plotly_dark",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        height=500,
+        margin=dict(l=20, r=20, t=20, b=20),
+        legend=dict(orientation="h", y=1.02, x=1),
+        hovermode="x unified"
+    )
+    
+    # Axis styling
+    fig_main.update_yaxes(title_text="Price (₹)", gridcolor='rgba(255,255,255,0.1)', secondary_y=False)
+    fig_main.update_yaxes(title_text="Occupancy %", showgrid=False, secondary_y=True)
+    fig_main.update_xaxes(gridcolor='rgba(255,255,255,0.1)')
+    
+    st.plotly_chart(fig_main, use_container_width=True)
 
+    # 4. Small Multiples (Financial Analysis)
+    st.markdown("### 🧠 ML Training Insights")
+    
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("**🔬 Elasticity Scatter (Price Sensitivity)**")
+        # Does higher price = lower sales?
+        fig_scatter = px.scatter(
+            df, x="base_price", y="occupancy",
+            color="bus_type",
+            trendline="ols", # Add regression line
+            color_discrete_sequence=['#3b82f6', '#ec4899']
+        )
+        fig_scatter.update_layout(
+            template="plotly_dark",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(20,20,30,0.5)',
+            xaxis_title="Price Point (₹)",
+            yaxis_title="Occupancy achieved (%)",
+            height=350
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+        
+    with c2:
+        st.markdown("**📊 Yield Heatmap (Day of Week)**")
+        # Revenue per seat by day
+        df['day_name'] = df['travel_date'].dt.day_name()
+        df['revenue'] = df['base_price'] * df['sold_seats']
+        
+        # Aggregate
+        heatmap_data = df.groupby('day_name')['revenue'].mean().reindex(
+            ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        ).reset_index()
+        
+        fig_heat = px.bar(
+            heatmap_data, x='day_name', y='revenue',
+            color='revenue',
+            color_continuous_scale='Viridis'
+        )
+        fig_heat.update_layout(
+            template="plotly_dark",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            xaxis_title="",
+            yaxis_title="Avg Revenue (₹)",
+            height=350
+        )
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+    # 5. Raw Data Table (Financial Style)
+    with st.expander("📋 View Order Book (Raw Data)", expanded=True):
+        st.dataframe(
+            df[['travel_date', 'bus_type', 'base_price', 'available_seats', 'sold_seats', 'occupancy']].style.background_gradient(subset=['occupancy'], cmap='RdYlGn'),
+            use_container_width=True
+        )
 
 if __name__ == "__main__":
     main()

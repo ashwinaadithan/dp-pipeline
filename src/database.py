@@ -279,6 +279,98 @@ def get_price_trends(route_from=None, route_to=None, days=7):
         return []
 
 
+def get_dashboard_metrics(days=30):
+    """Get high-level KPIs for the dashboard tickers."""
+    conn = get_connection()
+    if not conn:
+        return {}
+    
+    try:
+        cur = conn.cursor()
+        
+        # 1. Total Revenue (Estimated based on sold seats * base_price) -> purely indicative
+        # 2. Avg Occupancy
+        # 3. Avg Price
+        # 4. Total Buses Scraped
+        query = """
+        SELECT 
+            COUNT(*) as total_buses,
+            AVG(base_price) as avg_price,
+            AVG(CASE WHEN (available_seats + sold_seats) > 0 
+                THEN (sold_seats::FLOAT / (available_seats + sold_seats)) * 100 
+                ELSE 0 END) as avg_occupancy,
+            -- Calculate trend (vs previous period) roughly
+            (SELECT AVG(base_price) FROM buses WHERE scraped_at < NOW() - INTERVAL '%s days') as prev_price
+        FROM buses
+        WHERE scraped_at >= NOW() - INTERVAL '%s days'
+        """
+        
+        cur.execute(query, (days, days))
+        row = cur.fetchone()
+        
+        metrics = {
+            "total_buses": row[0] or 0,
+            "avg_price": round(row[1] or 0),
+            "avg_occupancy": round(row[2] or 0, 1),
+            "prev_price": round(row[3] or 0)
+        }
+        
+        cur.close()
+        conn.close()
+        return metrics
+        
+    except Exception as e:
+        print(f"❌ Dashboard metrics fetch failed: {e}")
+        return {}
+
+
+def get_route_timeseries(from_city=None, to_city=None, limit=500):
+    """Get time-series data for the main 'Stock Chart'."""
+    conn = get_connection()
+    if not conn:
+        return []
+    
+    try:
+        cur = conn.cursor()
+        
+        query = """
+        SELECT 
+            travel_date,
+            scraped_at,
+            base_price,
+            available_seats,
+            sold_seats,
+            (sold_seats::FLOAT / NULLIF(available_seats + sold_seats, 0)) * 100 as occupancy,
+            bus_type
+        FROM buses
+        WHERE 1=1
+        """
+        params = []
+        
+        if from_city:
+            query += " AND from_city = %s"
+            params.append(from_city)
+        if to_city:
+            query += " AND to_city = %s"
+            params.append(to_city)
+            
+        query += " ORDER BY travel_date ASC, scraped_at ASC LIMIT %s"
+        params.append(limit)
+        
+        cur.execute(query, params)
+        columns = [desc[0] for desc in cur.description]
+        data = [dict(zip(columns, row)) for row in cur.fetchall()]
+        
+        cur.close()
+        conn.close()
+        return data
+        
+    except Exception as e:
+        print(f"❌ Route timeseries fetch failed: {e}")
+        return []
+
+
+
 def _parse_date(date_str):
     """Parse date string to YYYY-MM-DD format."""
     if not date_str:
