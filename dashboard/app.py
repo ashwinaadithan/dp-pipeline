@@ -82,14 +82,20 @@ st.markdown("""
 @st.cache_data(ttl=600)
 def load_data():
     """Load latest data from DB or fallback to file/demo."""
+    error_message = None
+    
     if DB_CONNECTED:
         try:
             # INCREASED LIMIT TO 10,000 to ensure full fleet visibility
             raw_data = get_latest_data(limit=10000)
             if raw_data:
-                return pd.DataFrame(raw_data)
-        except:
-            pass
+                return pd.DataFrame(raw_data), None
+            else:
+                error_message = "Database returned 0 rows. Check if data exists in 'buses' table."
+        except Exception as e:
+            error_message = f"Database connection error: {str(e)}"
+    else:
+        error_message = "Database module not loaded (ImportError)."
             
     # If no DB, generate demo data
     dates = pd.date_range(start=datetime.now(), periods=14, freq='D')
@@ -109,7 +115,7 @@ def load_data():
                 "bus_type": np.random.choice(["Seater", "Sleeper"]),
                 "operator": "Vignesh Tat"
             })
-    return pd.DataFrame(data)
+    return pd.DataFrame(data), error_message
 
 # ==============================================================================
 # 🖥️ MAIN DASHBOARD
@@ -119,9 +125,17 @@ def main():
     # Header
     st.markdown("# 💺 <span class='gradient-text'>Seat Demand Intelligence</span>", unsafe_allow_html=True)
     st.markdown("Dynamic Pricing & Occupancy Prediction Engine")
-    st.markdown("---")
     
-    df = load_data()
+    # Connection Status Indicator
+    df, db_error = load_data()
+    
+    if db_error:
+        st.warning(f"⚠️ **Demo Mode Active** ({db_error})")
+        st.info("To fix: Add `NEON_DATABASE_URL` to Streamlit Secrets.")
+    else:
+        st.success("🟢 **Live Database Connected** (Neon DB)")
+        
+    st.markdown("---")
     
     # Preprocessing
     if not df.empty:
