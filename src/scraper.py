@@ -41,7 +41,7 @@ TOTAL_DURATION_DAYS = 7
 
 # ========================= SCRAPING SETTINGS =========================
 # How many future days to scrape in each run
-DAYS_AHEAD = 7
+DAYS_AHEAD = 3
 
 # Delay between page loads to avoid rate limiting (seconds)
 PAGE_DELAY = 3
@@ -1160,6 +1160,11 @@ async def run_scraper():
             session["expected_routes"] = dict(_expected_buses_per_route)
             
             # Step 2: Scrape each discovered route
+            # Shuffle routes to ensure fair coverage over time (Random Round Robin)
+            import random
+            random.shuffle(discovered_routes)
+            print(f"\n🔀 Routes shuffled! Scraping order randomized for better coverage.")
+            
             for from_city, to_city, expected_count in discovered_routes:
                 route_key = f"{from_city}->{to_city}"
                 scraped_buses_per_route[route_key] = 0
