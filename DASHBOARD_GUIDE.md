@@ -150,4 +150,38 @@ def calculate_dynamic_price(base_price, features):
 
 ---
 
+## Technical: Stable Bus ID System
+
+Starting from January 2026, buses now have **stable IDs** that persist across hourly scrapes:
+
+**Format**: `{OPERATOR}_{FROM}_{TO}_{DATE}_{TIME}`
+
+**Example**: `VIG_CHE_TIR_20260115_2100`
+- VIG = Vignesh TAT (first 3 chars)
+- CHE = Chennai (from city)
+- TIR = Tirunelveli (to city)
+- 20260115 = January 15, 2026
+- 2100 = 21:00 departure
+
+**Why this matters**:
+- Same bus = same ID across all hourly scrapes
+- Enables tracking price changes: ₹1000 → ₹1200 → ₹1500
+- Critical for dynamic pricing algorithm training
+- Price history stored in `price_history` table
+
+**Price History Query**:
+```python
+from database import get_price_history
+
+# Get price history for a specific bus
+history = get_price_history(bus_id="VIG_CHE_TIR_20260115_2100")
+# Returns: [{base_price: 1000, scraped_at: "10:00"}, {base_price: 1200, scraped_at: "11:00"}, ...]
+
+# Find buses that had price changes (dynamic pricing in action)
+changed = get_buses_with_price_changes()
+# Returns buses where max_price != min_price
+```
+
+---
+
 *Dashboard data source: Neon PostgreSQL | Updated every 5 minutes | All data from Vignesh TAT operator page on RedBus*
