@@ -133,6 +133,22 @@ def init_database():
         CREATE INDEX IF NOT EXISTS idx_seat_prices_bus ON seat_prices(bus_id);
         """)
         
+        # MIGRATION: Add columns to existing tables if they don't exist
+        # This handles the case where tables were created before we added new columns
+        try:
+            cur.execute("""
+            ALTER TABLE seat_prices ADD COLUMN IF NOT EXISTS scraped_at TIMESTAMP DEFAULT NOW();
+            """)
+        except Exception:
+            pass  # Column already exists or other issue, ignore
+        
+        try:
+            cur.execute("""
+            ALTER TABLE buses ALTER COLUMN bus_id TYPE VARCHAR(100);
+            """)
+        except Exception:
+            pass  # Already correct type or other issue, ignore
+        
         conn.commit()
         cur.close()
         conn.close()
