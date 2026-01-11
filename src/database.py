@@ -82,7 +82,7 @@ def init_database():
         CREATE TABLE IF NOT EXISTS buses (
             id SERIAL PRIMARY KEY,
             run_id VARCHAR(50),
-            bus_id VARCHAR(50),
+            bus_id VARCHAR(100),
             operator VARCHAR(100),
             bus_type VARCHAR(50),
             from_city VARCHAR(100),
@@ -101,17 +101,36 @@ def init_database():
         
         CREATE TABLE IF NOT EXISTS seat_prices (
             id SERIAL PRIMARY KEY,
-            bus_id VARCHAR(50),
+            bus_id VARCHAR(100),
             seat_id VARCHAR(20),
             price INTEGER,
             deck VARCHAR(10),
             is_window BOOLEAN,
+            scraped_at TIMESTAMP DEFAULT NOW(),
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+        
+        -- NEW: Price history table for tracking price changes over time
+        -- Stores a record every time we scrape a bus, enabling price trend analysis
+        CREATE TABLE IF NOT EXISTS price_history (
+            id SERIAL PRIMARY KEY,
+            bus_id VARCHAR(100),
+            base_price INTEGER,
+            min_price INTEGER,
+            max_price INTEGER,
+            available_seats INTEGER,
+            sold_seats INTEGER,
+            scraped_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT NOW()
         );
         
         CREATE INDEX IF NOT EXISTS idx_buses_run ON buses(run_id);
         CREATE INDEX IF NOT EXISTS idx_buses_date ON buses(travel_date);
         CREATE INDEX IF NOT EXISTS idx_buses_route ON buses(from_city, to_city);
+        CREATE INDEX IF NOT EXISTS idx_buses_bus_id ON buses(bus_id);
+        CREATE INDEX IF NOT EXISTS idx_price_history_bus ON price_history(bus_id);
+        CREATE INDEX IF NOT EXISTS idx_price_history_time ON price_history(scraped_at);
+        CREATE INDEX IF NOT EXISTS idx_seat_prices_bus ON seat_prices(bus_id);
         """)
         
         conn.commit()
@@ -183,17 +202,34 @@ def save_scrape_run(run_data):
                 session.get("scraped_at")
             ))
             
-            # Insert seat prices
+            # ALSO insert into price_history for tracking price changes over time
+            cur.execute("""
+            INSERT INTO price_history (
+                bus_id, base_price, min_price, max_price, 
+                available_seats, sold_seats, scraped_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (
+                bus.get("bus_id"),
+                bus.get("base_price"),
+                seats.get("price_range", {}).get("min"),
+                seats.get("price_range", {}).get("max"),
+                seats.get("available_seats", 0),
+                seats.get("sold_seats", 0),
+                session.get("scraped_at")
+            ))
+            
+            # Insert seat prices WITH timestamp for time-series tracking
             for seat in seats.get("available_seats_data", []):
                 cur.execute("""
-                INSERT INTO seat_prices (bus_id, seat_id, price, deck, is_window)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO seat_prices (bus_id, seat_id, price, deck, is_window, scraped_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """, (
                     bus.get("bus_id"),
                     seat.get("seat_id"),
                     seat.get("price"),
                     seat.get("deck"),
-                    seat.get("is_window", False)
+                    seat.get("is_window", False),
+                    session.get("scraped_at")
                 ))
         
         conn.commit()
@@ -425,6 +461,98 @@ def get_seat_level_data(bus_id=None, limit=2000):
         return []
 
 
+def get_price_history(bus_id=None, limit=500):
+    """
+    Fetch price history for tracking price changes over time.
+    Returns list of {bus_id, base_price, min_price, max_price, seats, scraped_at}
+    
+    With stable bus_ids, the same bus will have multiple entries showing
+    how its price changed across hourly scrapes.
+    """
+    conn = get_connection()
+    if not conn:
+        return []
+    
+    try:
+        cur = conn.cursor()
+        
+        if bus_id:
+            # Get history for specific bus
+            cur.execute("""
+            SELECT 
+                ph.bus_id, ph.base_price, ph.min_price, ph.max_price,
+                ph.available_seats, ph.sold_seats, ph.scraped_at,
+                b.from_city, b.to_city, b.travel_date, b.departure_time, b.bus_type
+            FROM price_history ph
+            JOIN buses b ON ph.bus_id = b.bus_id
+            WHERE ph.bus_id = %s
+            ORDER BY ph.scraped_at ASC
+            LIMIT %s
+            """, (bus_id, limit))
+        else:
+            # Get all recent price history
+            cur.execute("""
+            SELECT DISTINCT ON (ph.bus_id, ph.scraped_at)
+                ph.bus_id, ph.base_price, ph.min_price, ph.max_price,
+                ph.available_seats, ph.sold_seats, ph.scraped_at,
+                b.from_city, b.to_city, b.travel_date, b.departure_time, b.bus_type
+            FROM price_history ph
+            JOIN buses b ON ph.bus_id = b.bus_id
+            ORDER BY ph.bus_id, ph.scraped_at DESC
+            LIMIT %s
+            """, (limit,))
+        
+        columns = [desc[0] for desc in cur.description]
+        data = [dict(zip(columns, row)) for row in cur.fetchall()]
+        
+        cur.close()
+        conn.close()
+        return data
+        
+    except Exception as e:
+        print(f"❌ Price history fetch failed: {e}")
+        return []
+
+
+def get_buses_with_price_changes():
+    """
+    Find buses that have had price changes (for highlighting dynamic pricing).
+    Returns buses where price has changed at least once.
+    """
+    conn = get_connection()
+    if not conn:
+        return []
+    
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+        SELECT 
+            ph.bus_id,
+            b.from_city, b.to_city, b.travel_date, b.departure_time, b.bus_type,
+            MIN(ph.base_price) as min_seen_price,
+            MAX(ph.base_price) as max_seen_price,
+            COUNT(*) as scrape_count,
+            MAX(ph.base_price) - MIN(ph.base_price) as price_change
+        FROM price_history ph
+        JOIN buses b ON ph.bus_id = b.bus_id
+        GROUP BY ph.bus_id, b.from_city, b.to_city, b.travel_date, b.departure_time, b.bus_type
+        HAVING MAX(ph.base_price) != MIN(ph.base_price)
+        ORDER BY price_change DESC
+        LIMIT 50
+        """)
+        
+        columns = [desc[0] for desc in cur.description]
+        data = [dict(zip(columns, row)) for row in cur.fetchall()]
+        
+        cur.close()
+        conn.close()
+        return data
+        
+    except Exception as e:
+        print(f"❌ Price changes fetch failed: {e}")
+        return []
+
+
 
 
 def _parse_date(date_str):
@@ -448,3 +576,4 @@ def _parse_date(date_str):
 # Initialize on import
 if SAVE_TO_DB and DATABASE_URL:
     init_database()
+
