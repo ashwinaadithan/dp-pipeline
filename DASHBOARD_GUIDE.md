@@ -1,7 +1,7 @@
 # Vignesh TAT Dynamic Pricing - Dashboard Documentation
 
 ## Overview
-
+/
 This dashboard visualizes real-time bus pricing data for **Vignesh TAT** operator, scraped hourly from RedBus via our automated pipeline. All data is stored in Neon PostgreSQL and displayed dynamically - **no hardcoded values**.
 
 ---
