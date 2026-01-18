@@ -41,7 +41,7 @@ TOTAL_DURATION_DAYS = 7
 
 # ========================= SCRAPING SETTINGS =========================
 # How many future days to scrape in each run
-DAYS_AHEAD = 3
+DAYS_AHEAD = 7
 
 # Delay between page loads to avoid rate limiting (seconds)
 PAGE_DELAY = 3
@@ -90,51 +90,10 @@ _expected_buses_per_route = {}
 
 
 def gen_bus_id():
-    """Generate unique bus ID (legacy - for backwards compat)"""
+    """Generate unique bus ID"""
     global _bus_counter
     _bus_counter += 1
     return f"RB_{_session_id}_{_bus_counter}"
-
-
-def gen_stable_bus_id(operator, from_city, to_city, travel_date, departure_time):
-    """
-    Generate STABLE bus ID based on immutable properties.
-    Same bus will get same ID across all hourly scrapes.
-    
-    Format: VT_CHN_TVM_20260115_2100
-    
-    This allows tracking price changes for the same bus over time!
-    """
-    import hashlib
-    
-    # Clean and normalize inputs
-    op = operator[:3].upper() if operator else "UNK"
-    fr = ''.join(c for c in from_city[:3].upper() if c.isalpha()) if from_city else "XXX"
-    to = ''.join(c for c in to_city[:3].upper() if c.isalpha()) if to_city else "YYY"
-    
-    # Parse date to consistent format
-    date_str = ""
-    if travel_date:
-        if isinstance(travel_date, str):
-            # Try parsing DD-MMM-YYYY format
-            try:
-                from datetime import datetime as dt
-                date_obj = dt.strptime(travel_date, "%d-%b-%Y")
-                date_str = date_obj.strftime("%Y%m%d")
-            except:
-                date_str = travel_date.replace("-", "").replace("/", "")[:8]
-        else:
-            date_str = str(travel_date).replace("-", "")[:8]
-    else:
-        date_str = "00000000"
-    
-    # Normalize departure time (21:00 -> 2100)
-    dep = departure_time.replace(":", "").replace(" ", "")[:4] if departure_time else "0000"
-    
-    # Create stable ID
-    stable_id = f"{op}_{fr}_{to}_{date_str}_{dep}"
-    
-    return stable_id
 
 
 def parse_price(text):
@@ -1113,17 +1072,9 @@ async def scrape_route(page, from_city, to_city, travel_date, target_day):
                         bus_type = pattern
                         break
                 
-                # Build bus data with STABLE bus_id for price tracking
-                stable_id = gen_stable_bus_id(
-                    operator=OPERATOR_NAME,
-                    from_city=from_city,
-                    to_city=to_city,
-                    travel_date=travel_date,
-                    departure_time=dep
-                )
-                
+                # Build bus data
                 bus_data = {
-                    "bus_id": stable_id,
+                    "bus_id": gen_bus_id(),
                     "operator": OPERATOR_NAME.upper(),
                     "bus_type": bus_type,
                     "departure_time": dep,
