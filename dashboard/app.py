@@ -35,7 +35,7 @@ def get_db():
         return None, str(e)
 
 
-def fetch_buses(limit=3000):
+def fetch_buses(limit=50000):
     conn, err = get_db()
     if not conn:
         return pd.DataFrame(), err
