@@ -577,7 +577,7 @@ def chart_route_performance(df):
 
 def main():
     # Load data
-    df, err = fetch_buses(3000)
+    df, err = fetch_buses()  # Uses default 50000 limit
     df = preprocess(df)
     
     if df.empty:
