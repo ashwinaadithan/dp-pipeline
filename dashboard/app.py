@@ -255,6 +255,18 @@ st.markdown("""
     hr {
         border-color: #21262d;
     }
+    
+    /* Multiselect Tags - White text for readability */
+    [data-baseweb="tag"] {
+        background-color: #388bfd !important;
+        color: white !important;
+    }
+    [data-baseweb="tag"] span {
+        color: white !important;
+    }
+    [data-baseweb="tag"] svg {
+        fill: white !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
