@@ -34,7 +34,7 @@ def get_db():
         return None, str(e)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def fetch_all_data():
     conn, err = get_db()
     if not conn:
@@ -46,8 +46,7 @@ def fetch_all_data():
                    departure_time, base_price, available_seats, sold_seats, 
                    min_price, max_price, scraped_at
             FROM buses 
-            ORDER BY scraped_at DESC 
-            LIMIT 100000
+            ORDER BY scraped_at DESC
         """)
         cols = [d[0] for d in cur.description]
         rows = cur.fetchall()
@@ -472,6 +471,9 @@ def main():
     
     # Sidebar Filters
     st.sidebar.markdown("### Filters")
+    if st.sidebar.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
     
     # Date Range
     st.sidebar.markdown("**Date Range**")
@@ -526,7 +528,7 @@ def main():
     
     # Header
     st.markdown("# Dynamic Pricing Intelligence")
-    st.markdown(f"<p style='color:#8b949e; margin-top:-10px;'>Vignesh TAT | Analyzing {len(df_filtered):,} records across {len(selected_routes)} routes</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='color:#8b949e; margin-top:-10px;'>Vignesh TAT | {len(df):,} total records | Showing {len(df_filtered):,} filtered across {len(selected_routes)} routes</p>", unsafe_allow_html=True)
     
     # KPI Metrics
     if not df_filtered.empty:
