@@ -489,23 +489,26 @@ def main():
     # Routes
     st.sidebar.markdown("**Routes**")
     all_routes = sorted(df['route'].unique())
-    route_options = ["All Routes"] + all_routes
-    selected_route = st.sidebar.selectbox("Routes", options=route_options, index=0, label_visibility="collapsed")
-    selected_routes = all_routes if selected_route == "All Routes" else [selected_route]
+    route_selection = st.sidebar.multiselect(
+        "Routes", options=["All Routes"] + all_routes, default=["All Routes"], label_visibility="collapsed"
+    )
+    selected_routes = all_routes if "All Routes" in route_selection else route_selection
     
-    # Bus Type
+    # Bus Type (Seater/Sleeper)
     st.sidebar.markdown("**Bus Type**")
     bus_types = sorted(df['bus_type'].unique())
-    type_options = ["All Types"] + bus_types
-    selected_type = st.sidebar.selectbox("Bus Type", options=type_options, index=0, label_visibility="collapsed")
-    selected_types = bus_types if selected_type == "All Types" else [selected_type]
+    type_selection = st.sidebar.multiselect(
+        "Bus Type", options=["All Types"] + bus_types, default=["All Types"], label_visibility="collapsed"
+    )
+    selected_types = bus_types if "All Types" in type_selection else type_selection
     
     # Day Type
     st.sidebar.markdown("**Day Type**")
     day_types = ['Weekday', 'Weekend'] + sorted([d for d in df['day_type'].unique() if d not in ['Weekday', 'Weekend']])
-    day_options = ["All Days"] + day_types
-    selected_day = st.sidebar.selectbox("Day Type", options=day_options, index=0, label_visibility="collapsed")
-    selected_days = day_types if selected_day == "All Days" else [selected_day]
+    day_selection = st.sidebar.multiselect(
+        "Day Type", options=["All Days"] + day_types, default=["All Days"], label_visibility="collapsed"
+    )
+    selected_days = day_types if "All Days" in day_selection else day_selection
     
     # Apply filters
     mask = (
