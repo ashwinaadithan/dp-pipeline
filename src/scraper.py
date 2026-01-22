@@ -41,7 +41,7 @@ TOTAL_DURATION_DAYS = 7
 
 # ========================= SCRAPING SETTINGS =========================
 # How many future days to scrape in each run
-DAYS_AHEAD = 7
+DAYS_AHEAD = 15
 
 # Delay between page loads to avoid rate limiting (seconds)
 PAGE_DELAY = 3
