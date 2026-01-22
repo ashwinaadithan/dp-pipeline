@@ -685,7 +685,7 @@ def main():
         cols = [c for c in cols if c in df_table.columns]
         
         st.dataframe(
-            df_table[cols].sort_values('scraped_at', ascending=False).head(500),
+            df_table[cols].sort_values('travel_date', ascending=False).head(500),
             use_container_width=True,
             height=350
         )
