@@ -492,7 +492,7 @@ def main():
     selected_routes = st.sidebar.multiselect(
         "Select routes",
         options=all_routes,
-        default=all_routes[:6] if len(all_routes) > 6 else all_routes,
+        default=all_routes,
         label_visibility="collapsed"
     )
     
