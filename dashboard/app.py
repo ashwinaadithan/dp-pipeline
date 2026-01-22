@@ -680,12 +680,25 @@ def main():
         
         st.markdown(f"**{len(df_table):,} records** matching filters")
         
-        cols = ['bus_id', 'travel_date', 'route', 'bus_type', 'departure_time', 'base_price', 
-                'available_seats', 'sold_seats', 'occupancy', 'day_type']
-        cols = [c for c in cols if c in df_table.columns]
+        # Bus filter for detailed history
+        bus_ids = ["All Buses"] + sorted(df_table['bus_id'].unique().tolist()) if 'bus_id' in df_table.columns else ["All Buses"]
+        selected_bus_filter = st.selectbox("🔍 Filter by Bus ID", options=bus_ids, index=0)
+        
+        if selected_bus_filter != "All Buses":
+            df_display = df[df['bus_id'] == selected_bus_filter].copy()
+            cols = ['bus_id', 'scraped_at', 'travel_date', 'route', 'bus_type', 'departure_time', 
+                    'base_price', 'available_seats', 'sold_seats', 'occupancy']
+            st.markdown(f"**Showing {len(df_display)} scrapes** for bus: `{selected_bus_filter}`")
+        else:
+            df_display = df_table
+            cols = ['bus_id', 'travel_date', 'route', 'bus_type', 'departure_time', 'base_price', 
+                    'available_seats', 'sold_seats', 'occupancy', 'day_type']
+        
+        cols = [c for c in cols if c in df_display.columns]
+        sort_col = 'scraped_at' if 'scraped_at' in df_display.columns and selected_bus_filter != "All Buses" else 'travel_date'
         
         st.dataframe(
-            df_table[cols].sort_values('travel_date', ascending=False).head(500),
+            df_display[cols].sort_values(sort_col, ascending=True).head(500),
             use_container_width=True,
             height=350
         )
