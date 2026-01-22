@@ -90,10 +90,47 @@ _expected_buses_per_route = {}
 
 
 def gen_bus_id():
-    """Generate unique bus ID"""
+    """Generate unique bus ID (legacy - use gen_stable_bus_id instead)"""
     global _bus_counter
     _bus_counter += 1
     return f"RB_{_session_id}_{_bus_counter}"
+
+
+def gen_stable_bus_id(from_city, to_city, travel_date, departure_time):
+    """
+    Generate STABLE bus ID that stays the same across hourly scrapes.
+    
+    Format: RB_{from}_{to}_{travel_date}_{departure_time}
+    Example: RB_Chennai_Madurai_20260129_1835
+    
+    This allows tracking price changes for the same bus over time.
+    """
+    # Clean city names (remove spaces, lowercase)
+    from_clean = from_city.replace(" ", "").lower()[:10]
+    to_clean = to_city.replace(" ", "").lower()[:10]
+    
+    # Parse travel date to YYYYMMDD format
+    try:
+        if isinstance(travel_date, str):
+            # Handle formats like "29-Jan-2026" or "2026-01-29"
+            for fmt in ["%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y"]:
+                try:
+                    date_obj = datetime.strptime(travel_date, fmt)
+                    date_str = date_obj.strftime("%Y%m%d")
+                    break
+                except:
+                    continue
+            else:
+                date_str = travel_date.replace("-", "").replace("/", "")[:8]
+        else:
+            date_str = travel_date.strftime("%Y%m%d")
+    except:
+        date_str = "unknown"
+    
+    # Clean departure time (remove colons)
+    time_clean = departure_time.replace(":", "").replace(" ", "")[:4] if departure_time else "0000"
+    
+    return f"RB_{from_clean}_{to_clean}_{date_str}_{time_clean}"
 
 
 def parse_price(text):
@@ -1072,9 +1109,9 @@ async def scrape_route(page, from_city, to_city, travel_date, target_day):
                         bus_type = pattern
                         break
                 
-                # Build bus data
+                # Build bus data with STABLE bus_id for tracking price changes
                 bus_data = {
-                    "bus_id": gen_bus_id(),
+                    "bus_id": gen_stable_bus_id(from_city, to_city, travel_date, dep),
                     "operator": OPERATOR_NAME.upper(),
                     "bus_type": bus_type,
                     "departure_time": dep,
