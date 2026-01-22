@@ -680,15 +680,53 @@ def main():
         
         st.markdown(f"**{len(df_table):,} records** matching filters")
         
-        cols = ['travel_date', 'route', 'bus_type', 'departure_time', 'base_price', 
-                'available_seats', 'sold_seats', 'occupancy', 'day_type', 'days_ahead']
+        cols = ['bus_id', 'travel_date', 'route', 'bus_type', 'departure_time', 'base_price', 
+                'available_seats', 'sold_seats', 'occupancy', 'day_type']
         cols = [c for c in cols if c in df_table.columns]
         
         st.dataframe(
-            df_table[cols].sort_values('travel_date', ascending=False).head(1000),
+            df_table[cols].sort_values('scraped_at', ascending=False).head(500),
             use_container_width=True,
-            height=450
+            height=350
         )
+        
+        # Bus Price History
+        st.markdown("---")
+        st.markdown("#### 📈 Bus Price History")
+        
+        if not df_table.empty and 'bus_id' in df_table.columns:
+            bus_ids = df_table['bus_id'].unique().tolist()
+            selected_bus = st.selectbox("Select a bus to view price history", options=bus_ids, index=0)
+            
+            if selected_bus:
+                bus_history = df[df['bus_id'] == selected_bus].sort_values('scraped_at')
+                if len(bus_history) > 1:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=bus_history['scraped_at'],
+                        y=bus_history['base_price'],
+                        mode='lines+markers',
+                        name='Price',
+                        line=dict(color=COLORS['blue'], width=2),
+                        marker=dict(size=8),
+                        hovertemplate="<b>%{x}</b><br>Rs %{y:,.0f}<extra></extra>"
+                    ))
+                    fig.update_layout(**chart_layout(300, f"Price History: {selected_bus}"))
+                    fig.update_xaxes(title="Scraped At")
+                    fig.update_yaxes(title="Price (Rs)", tickprefix="Rs ")
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Show stats
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Min Price", f"Rs {bus_history['base_price'].min():,.0f}")
+                    with col2:
+                        st.metric("Max Price", f"Rs {bus_history['base_price'].max():,.0f}")
+                    with col3:
+                        price_change = bus_history['base_price'].iloc[-1] - bus_history['base_price'].iloc[0]
+                        st.metric("Price Change", f"Rs {price_change:+,.0f}")
+                else:
+                    st.info(f"Only 1 data point for this bus. Need multiple scrapes to show price history.")
         
         col1, col2 = st.columns([1, 4])
         with col1:
